@@ -56,7 +56,7 @@ def ensure_wasm_executable(path_to_wasm):
 # JS harness.
 def convert_one_wast_file(inputs):
     wast_file, js_file = inputs
-    print('Compiling {} to JS...'.format(wast_file))
+    print(f'Compiling {wast_file} to JS...')
     return run(WASM_EXEC, wast_file, '-h', '-o', js_file)
 
 def convert_wast_to_js(out_js_dir):
@@ -69,7 +69,7 @@ def convert_wast_to_js(out_js_dir):
         if '.fail.' in wast_file:
             continue
 
-        js_filename = os.path.basename(wast_file) + '.js'
+        js_filename = f'{os.path.basename(wast_file)}.js'
         js_file = os.path.join(out_js_dir, js_filename)
         inputs.append((wast_file, js_file))
 
@@ -127,7 +127,7 @@ HTML_BOTTOM = """
 def wrap_single_test(js_file):
     test_func_name = os.path.basename(js_file).replace('.', '_').replace('-', '_')
 
-    content = ["(function {}() {{".format(test_func_name)]
+    content = [f"(function {test_func_name}() {{"]
     with open(js_file, 'r') as f:
         content += f.readlines()
     content.append('reinitializeRegistry();')
@@ -149,7 +149,7 @@ def build_html_js(out_dir):
 def build_html_from_js(js_html_dir, html_dir, use_sync):
     for js_file in glob.glob(os.path.join(js_html_dir, '*.js')):
         js_filename = os.path.basename(js_file)
-        html_filename = js_filename + '.html'
+        html_filename = f'{js_filename}.html'
         html_file = os.path.join(html_dir, html_filename)
         js_harness = "sync_index.js" if use_sync else "async_index.js"
         with open(html_file, 'w+') as f:

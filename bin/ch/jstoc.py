@@ -23,21 +23,20 @@ def convert():
     if os.path.isfile(js_file_name) == False:
         print_usage()
 
-    h_file_name = os.path.basename(js_file_name) + '.h'
+    h_file_name = f'{os.path.basename(js_file_name)}.h'
 
     js_file_time = os.path.getmtime(js_file_name)
     h_file_time = 0
     if os.path.isfile(h_file_name):
         h_file_time = os.path.getmtime(h_file_name)
 
-    str_header = "static const char " + sys.argv[2] + "[] = {\n"
+    str_header = f"static const char {sys.argv[2]}" + "[] = {\n"
 
     # if header file is up to date and no update to jstoc.py since, skip..
     if h_file_time < js_file_time or h_file_time < os.path.getmtime(sys.argv[0]):
         with open(js_file_name, "rb") as js_file:
             last_break = len(str_header) # skip first line
-            byte = js_file.read(1)
-            while byte:
+            while byte := js_file.read(1):
                 str_header += str(ord(byte))
                 str_header += ","
                 # beautify a bit. limit column to ~80
@@ -47,15 +46,13 @@ def convert():
                     str_header += "\n"
                 else:
                     str_header += " "
-                byte = js_file.read(1)
             str_header += "0\n};"
 
-        h_file = open(h_file_name, "w")
-        h_file.write(str_header)
-        h_file.close()
-        print("-- " + h_file_name + " is created")
+        with open(h_file_name, "w") as h_file:
+            h_file.write(str_header)
+        print(f"-- {h_file_name} is created")
     else:
-        print("-- " + h_file_name + " is up to date. skipping.")
+        print(f"-- {h_file_name} is up to date. skipping.")
 
 if __name__ == '__main__':
     sys.exit(convert())

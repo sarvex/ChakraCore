@@ -53,45 +53,45 @@ class RunTests(unittest.TestCase):
 
     # Run original file
     expectedExitCode = 1 if ".fail." in inputFile else 0
-    logPath = self._auxFile(outputPath + ".log")
-    self._runCommand(('%s "%s"') % (wasmCommand, inputPath), logPath, expectedExitCode)
+    logPath = self._auxFile(f"{outputPath}.log")
+    self._runCommand(f'{wasmCommand} "{inputPath}"', logPath, expectedExitCode)
 
     if expectedExitCode != 0:
       return
 
     # Convert to binary and validate again
-    wasmPath = self._auxFile(outputPath + ".bin.wast")
-    logPath = self._auxFile(wasmPath + ".log")
-    self._runCommand(('%s -d "%s" -o "%s"') % (wasmCommand, inputPath, wasmPath), logPath)
-    self._runCommand(('%s -d "%s"') % (wasmCommand, wasmPath), logPath)
+    wasmPath = self._auxFile(f"{outputPath}.bin.wast")
+    logPath = self._auxFile(f"{wasmPath}.log")
+    self._runCommand(f'{wasmCommand} -d "{inputPath}" -o "{wasmPath}"', logPath)
+    self._runCommand(f'{wasmCommand} -d "{wasmPath}"', logPath)
 
     # Convert back to text and validate again
-    wastPath = self._auxFile(wasmPath + ".wast")
-    logPath = self._auxFile(wastPath + ".log")
-    self._runCommand(('%s -d "%s" -o "%s"') % (wasmCommand, wasmPath, wastPath), logPath)
-    self._runCommand(('%s -d "%s" ') % (wasmCommand, wastPath), logPath)
+    wastPath = self._auxFile(f"{wasmPath}.wast")
+    logPath = self._auxFile(f"{wastPath}.log")
+    self._runCommand(f'{wasmCommand} -d "{wasmPath}" -o "{wastPath}"', logPath)
+    self._runCommand(f'{wasmCommand} -d "{wastPath}" ', logPath)
 
     # Convert back to binary once more and compare
-    wasm2Path = self._auxFile(wastPath + ".bin.wast")
-    logPath = self._auxFile(wasm2Path + ".log")
-    self._runCommand(('%s -d "%s" -o "%s"') % (wasmCommand, wastPath, wasm2Path), logPath)
-    self._runCommand(('%s -d "%s"') % (wasmCommand, wasm2Path), logPath)
+    wasm2Path = self._auxFile(f"{wastPath}.bin.wast")
+    logPath = self._auxFile(f"{wasm2Path}.log")
+    self._runCommand(f'{wasmCommand} -d "{wastPath}" -o "{wasm2Path}"', logPath)
+    self._runCommand(f'{wasmCommand} -d "{wasm2Path}"', logPath)
     # TODO: The binary should stay the same, but OCaml's float-string conversions are inaccurate.
     # Once we upgrade to OCaml 4.03, use sprintf "%s" for printing floats.
     # self._compareFile(wasmPath, wasm2Path)
 
     # Convert to JavaScript
     jsPath = self._auxFile(outputPath.replace(".wast", ".js"))
-    logPath = self._auxFile(jsPath + ".log")
-    self._runCommand(('%s -d "%s" -o "%s"') % (wasmCommand, inputPath, jsPath), logPath)
+    logPath = self._auxFile(f"{jsPath}.log")
+    self._runCommand(f'{wasmCommand} -d "{inputPath}" -o "{jsPath}"', logPath)
     if jsCommand != None:
-      self._runCommand(('%s "%s"') % (jsCommand, jsPath), logPath)
+      self._runCommand(f'{jsCommand} "{jsPath}"', logPath)
 
 
 if __name__ == "__main__":
   if not os.path.exists(outputDir):
     os.makedirs(outputDir)
   for fileName in inputFiles:
-    testName = 'test ' + os.path.basename(fileName)
+    testName = f'test {os.path.basename(fileName)}'
     setattr(RunTests, testName, lambda self, file=fileName: self._runTestFile(file))
   unittest.main()

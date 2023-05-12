@@ -101,16 +101,13 @@ def getParamSequenceSize(paramSequence, estimate):
             elif param in ["win:UnicodeString"]:
                 total += 64
         else:
-            raise Exception ("Don't know size of " + param)
+            raise Exception(f"Don't know size of {param}")
 
-    if estimate:
-        return total
-
-    return total, pointers
+    return total if estimate else (total, pointers)
 
 class Template:
     def __repr__(self):
-        return "<Template " + self.name + " />"
+        return f"<Template {self.name} />"
     
     def __init__(self, name, prototypes, dependencies, structCounts, arrayCounts):
         self.name = name
@@ -179,7 +176,9 @@ def checkKnownAttributes(nodes, templateName):
         nodeMap = node.attributes
         for attribute in nodeMap.values():
             if attribute.name not in knownXmlAttributes:
-                raise ValueError('Unknown attribute: ' + attribute.name + ' in template ' + templateName)
+                raise ValueError(
+                    f'Unknown attribute: {attribute.name} in template {templateName}'
+                )
 
 def getTopLevelElementsByTagName(node, tag):
     return [e for e in node.getElementsByTagName(tag) if e.parentNode == node]
@@ -194,7 +193,7 @@ def parseTemplateNodes(templateNodes):
         checkKnownAttributes(dataNodes, templateName)
 
         functionPrototypes = FunctionSignature()
-        
+
         arrayCounts = {}
         structCounts = {}
         var_Dependencies = {}
@@ -208,9 +207,10 @@ def parseTemplateNodes(templateNodes):
             winLength = dataNode.getAttribute('length')
 
             var_dependency = [variable]
-            if winLength:
-                if wincount:
-                    raise Exception("Both count and length properties found on " + variable + " in template " + templateName)
+            if winLength and wincount:
+                raise Exception(
+                    f"Both count and length properties found on {variable} in template {templateName}"
+                )
 
             if wincount.isdigit() and int(wincount) == 1:
                 wincount = ''
@@ -264,8 +264,12 @@ def generateArgList(template):
     args = []
 
     if shouldPackTemplate(template):
-        args.append("        const unsigned int, length")
-        args.append("        const char *, __data__")
+        args.extend(
+            (
+                "        const unsigned int, length",
+                "        const char *, __data__",
+            )
+        )
     else:
         signature = template.signature
         for param in signature.paramList:
@@ -275,15 +279,15 @@ def generateArgList(template):
             winCount      = functionParam.count
             mappedCount   = lttngDataTypeMapping[winCount]
 
-            arg = "        " + mappedType
+            arg = f"        {mappedType}"
             if mappedCount != " ":
                 arg += mappedCount
             elif functionParam.length:
                 arg += "*"
-            arg += ", " + functionParam.name
-            
+            arg += f", {functionParam.name}"
+
             args.append(arg)
-        
+
     return header + ", \\\n".join(args) + footer
 
 def generateFieldList(template):
@@ -296,10 +300,14 @@ def generateFieldList(template):
     footer = "\n    )"
 
     fieldList = []
-    
+
     if shouldPackTemplate(template):
-        fieldList.append("      ctf_integer(unsigned long, length, length)")
-        fieldList.append("      ctf_sequence(char, __data__, __data__, unsigned long, length)")
+        fieldList.extend(
+            (
+                "      ctf_integer(unsigned long, length, length)",
+                "      ctf_sequence(char, __data__, __data__, unsigned long, length)",
+            )
+        )
     else:
         signature = template.signature
         for param in signature.paramList:
@@ -328,117 +336,132 @@ def generateFieldList(template):
                 ctf_type = ctfDataTypeMapping[wintypeName]
                 if ctf_type == "ctf_string":
                     field_body = ", ".join((varname, varname))
-                elif ctf_type == "ctf_integer" or ctf_type == "ctf_integer_hex" or ctf_type == "ctf_float":
+                elif ctf_type in ["ctf_integer", "ctf_integer_hex", "ctf_float"]:
                     field_body = ", ".join((mappedType, varname, varname))
                 elif ctf_type == "ctf_sequence":
-                    raise Exception("ctf_sequence needs special handling: " + template.name + " " + param)
+                    raise Exception(
+                        f"ctf_sequence needs special handling: {template.name} {param}"
+                    )
                 else:
-                    raise Exception("Unhandled ctf intrinsic: " + ctf_type)
+                    raise Exception(f"Unhandled ctf intrinsic: {ctf_type}")
 
 #            fieldList.append("//    " + wintypeName)
-            fieldList.append("      %s(%s)" % (ctf_type, field_body))
-    
+            fieldList.append(f"      {ctf_type}({field_body})")
+
     return header + "\n".join(fieldList) + footer
 
 def generateLttngHeader(providerName, lttngEventHeaderShortName, templates, events):
-    headerLines = []
+    headerLines = [
+        "",
+        "#ifdef __int64",
+        "#if TARGET_64",
+        "#undef __int64",
+        "#else",
+        '#error \"Linux and OSX builds only support 64bit platforms\"',
+        "#endif // TARGET_64",
+        "#endif // __int64",
+        "#undef TRACEPOINT_PROVIDER",
+        "#undef TRACEPOINT_INCLUDE",
+        "",
+        f"#define TRACEPOINT_PROVIDER {providerName}" + "\n",
+        "#define TRACEPOINT_INCLUDE \"./"
+        + lttngEventHeaderShortName
+        + "\"\n\n",
+        f"#if !defined(LTTNG_CHAKRA_H{providerName}"
+        + ") || defined(TRACEPOINT_HEADER_MULTI_READ)\n\n",
+        f"#define LTTNG_CHAKRA_H{providerName}" + "\n",
+        "\n#include <lttng/tracepoint.h>\n\n",
+    ]
 
-    headerLines.append("")
-    headerLines.append("#ifdef __int64")
-    headerLines.append("#if TARGET_64")
-    headerLines.append("#undef __int64")
-    headerLines.append("#else")
-    headerLines.append("#error \"Linux and OSX builds only support 64bit platforms\"")
-    headerLines.append("#endif // TARGET_64")
-    headerLines.append("#endif // __int64")
-    headerLines.append("#undef TRACEPOINT_PROVIDER")
-    headerLines.append("#undef TRACEPOINT_INCLUDE")
-    headerLines.append("")
-    headerLines.append("#define TRACEPOINT_PROVIDER " + providerName + "\n")
-    headerLines.append("#define TRACEPOINT_INCLUDE \"./" + lttngEventHeaderShortName + "\"\n\n")
-
-    headerLines.append("#if !defined(LTTNG_CHAKRA_H" + providerName + ") || defined(TRACEPOINT_HEADER_MULTI_READ)\n\n")
-    headerLines.append("#define LTTNG_CHAKRA_H" + providerName +"\n")
-
-    headerLines.append("\n#include <lttng/tracepoint.h>\n\n")
-
-    
     for templateName in templates:
         template = templates[templateName]
         functionSignature = template.signature
 
-        headerLines.append("")
-        headerLines.append("#define " + templateName + "_TRACEPOINT_ARGS \\")
-
+        headerLines.extend(("", f"#define {templateName}" + "_TRACEPOINT_ARGS \\"))
         tracepointArgs = generateArgList(template)
-        headerLines.append(tracepointArgs)
-
-        headerLines.append("TRACEPOINT_EVENT_CLASS(")
-        headerLines.append("    " + providerName + ",")
-        headerLines.append("    " + templateName + ",")
-        headerLines.append("    " + templateName + "_TRACEPOINT_ARGS,")
+        headerLines.extend((tracepointArgs, "TRACEPOINT_EVENT_CLASS("))
+        headerLines.extend(
+            (
+                f"    {providerName},",
+                f"    {templateName},",
+                f"    {templateName}_TRACEPOINT_ARGS,",
+            )
+        )
         tracepointFields = generateFieldList(template)
-        headerLines.append(tracepointFields)
-        headerLines.append(")")
-                        
-        headerLines.append("#define " + templateName + "T_TRACEPOINT_INSTANCE(name) \\")
-        headerLines.append("TRACEPOINT_EVENT_INSTANCE(\\")
-        headerLines.append("    " + providerName + ",\\")
-        headerLines.append("    " + templateName + ",\\")
-        headerLines.append("    name,\\")
-        headerLines.append("    " + templateName + "_TRACEPOINT_ARGS \\")
-        headerLines.append(")")
-
-    headerLines.append("")
-    headerLines.append("")
-    headerLines.append("TRACEPOINT_EVENT_CLASS(")
-    headerLines.append("    " + providerName + ",")
-    headerLines.append("    emptyTemplate,")
-    headerLines.append("    TP_ARGS(),")
-    headerLines.append("    TP_FIELDS()")
-    headerLines.append(")")
-    headerLines.append("#define T_TRACEPOINT_INSTANCE(name) \\")
-    headerLines.append("TRACEPOINT_EVENT_INSTANCE(\\")
-    headerLines.append("    " + providerName + ",\\")
-    headerLines.append("    emptyTemplate,\\")
-    headerLines.append("    name,\\")
-    headerLines.append("    TP_ARGS()\\")
-    headerLines.append(")")
-
-    headerLines.append("")
-
+        headerLines.extend(
+            (
+                tracepointFields,
+                ")",
+                f"#define {templateName}" + "T_TRACEPOINT_INSTANCE(name) \\",
+                "TRACEPOINT_EVENT_INSTANCE(\\",
+            )
+        )
+        headerLines.extend(
+            (
+                f"    {providerName}" + ",\\",
+                f"    {templateName}" + ",\\",
+                "    name,\\",
+                f"    {templateName}" + "_TRACEPOINT_ARGS \\",
+                ")",
+            )
+        )
+    headerLines.extend(("", "", "TRACEPOINT_EVENT_CLASS("))
+    headerLines.extend(
+        (
+            f"    {providerName},",
+            "    emptyTemplate,",
+            "    TP_ARGS(),",
+            "    TP_FIELDS()",
+            ")",
+            "#define T_TRACEPOINT_INSTANCE(name) \\",
+            "TRACEPOINT_EVENT_INSTANCE(\\",
+        )
+    )
+    headerLines.extend(
+        (
+            f"    {providerName}" + ",\\",
+            "    emptyTemplate,\\",
+            "    name,\\",
+            "    TP_ARGS()\\",
+            ")",
+            "",
+        )
+    )
     for eventNode in events:
         eventName    = eventNode.getAttribute('symbol')
         templateName = eventNode.getAttribute('template')
 
         if not eventName:
-            raise Exception(eventNode + " event does not have a symbol")
+            raise Exception(f"{eventNode} event does not have a symbol")
         if not templateName:
-            headerLines.append("T_TRACEPOINT_INSTANCE(" + eventName + ")")
+            headerLines.append(f"T_TRACEPOINT_INSTANCE({eventName})")
             continue
 
-        headerLines.append(templateName + "T_TRACEPOINT_INSTANCE(" + eventName + ")")
+        headerLines.append(f"{templateName}T_TRACEPOINT_INSTANCE({eventName})")
 
-    headerLines.append("#endif /* LTTNG_CHAKRA_H" + providerName + " */")
-    headerLines.append("#include <lttng/tracepoint-event.h>")
-
+    headerLines.extend(
+        (
+            f"#endif /* LTTNG_CHAKRA_H{providerName} */",
+            "#include <lttng/tracepoint-event.h>",
+        )
+    )
     return "\n".join(headerLines)
 
 def generateMethodBody(template, providerName, eventName):
     # Convert from ETW's windows types to LTTng compatiable types
 
     methodBody = [""]
-    
+
     functionSignature = template.signature
 
     if not shouldPackTemplate(template):
-        invocation = ["do_tracepoint(" + providerName, eventName]
+        invocation = [f"do_tracepoint({providerName}", eventName]
 
         for paramName in functionSignature.paramList:
             functionParam = functionSignature.getParam(paramName)
             wintypeName   = functionParam.winType
             winCount      = functionParam.count
-            
+
             ctf_type      = None
 
             if functionParam.outType:
@@ -452,54 +475,70 @@ def generateMethodBody(template, providerName, eventName):
             if ctf_type == "ctf_string" and wintypeName == "win:UnicodeString":
                 # Convert wchar unicode string to utf8
                 if functionParam.length:
-                    methodBody.append("utf8::WideToNarrow " + paramName + "_converter(" + paramName + ", " + functionParam.length + ");")
+                    methodBody.append(
+                        f"utf8::WideToNarrow {paramName}_converter({paramName}, {functionParam.length});"
+                    )
                 else:
-                    methodBody.append("utf8::WideToNarrow " + paramName + "_converter(" + paramName + ");")
-                invocation.append(paramName + "_converter")
-#            elif ctf_type == "ctf_sequence" or wintypeName == "win:Pointer":
+                    methodBody.append(f"utf8::WideToNarrow {paramName}_converter({paramName});")
+                invocation.append(f"{paramName}_converter")
             elif wintypeName == "win:Pointer":
-                invocation.append("(" + lttngDataTypeMapping[wintypeName] + lttngDataTypeMapping[winCount] + ")" + paramName)
+                invocation.append(
+                    f"({lttngDataTypeMapping[wintypeName]}{lttngDataTypeMapping[winCount]}){paramName}"
+                )
             else:
                 invocation.append(paramName)
 
         methodBody.append(",\n        ".join(invocation) + ");")
     else:
-        # Packing results into buffer
-        methodBody.append("char stackBuffer[" + str(template.estimatedSize) + "];")
-        methodBody.append("char *buffer = stackBuffer;")
-        methodBody.append("int offset = 0;")
-        methodBody.append("int size = " + str(template.estimatedSize) + ";")
-        methodBody.append("bool fixedBuffer = true;")
-        methodBody.append("bool success = true;")
-
+        methodBody.extend(
+            (
+                f"char stackBuffer[{str(template.estimatedSize)}];",
+                "char *buffer = stackBuffer;",
+                "int offset = 0;",
+                f"int size = {str(template.estimatedSize)};",
+                "bool fixedBuffer = true;",
+                "bool success = true;",
+            )
+        )
         for paramName in functionSignature.paramList:
             functionParameter = functionSignature.getParam(paramName)
 
             if paramName in template.structCounts:
-                size = "(unsigned int)" + paramName + "_ElementSize * (unsigned int)" + template.structCounts[paramName]
-                methodBody.append("success &= WriteToBuffer((const char *)" + paramName + ", " + size + ", buffer, offset, size, fixedBuffer);")
+                size = f"(unsigned int){paramName}_ElementSize * (unsigned int){template.structCounts[paramName]}"
+                methodBody.append(
+                    f"success &= WriteToBuffer((const char *){paramName}, {size}, buffer, offset, size, fixedBuffer);"
+                )
             elif paramName in template.arrayCounts:
-                size = "sizeof(" + lttngDataTypeMapping[functionParameter.winType] + ") * (unsigned int)" + template.arrayCounts[paramName]
-                methodBody.append("success &= WriteToBuffer((const char *)" + paramName + ", " + size + ", buffer, offset, size, fixedBuffer);")
+                size = f"sizeof({lttngDataTypeMapping[functionParameter.winType]}) * (unsigned int){template.arrayCounts[paramName]}"
+                methodBody.append(
+                    f"success &= WriteToBuffer((const char *){paramName}, {size}, buffer, offset, size, fixedBuffer);"
+                )
             elif functionParameter.winType == "win:GUID":
-                methodBody.append("success &= WriteToBuffer(*" + paramName + ", buffer, offset, size, fixedBuffer);")
+                methodBody.append(
+                    f"success &= WriteToBuffer(*{paramName}, buffer, offset, size, fixedBuffer);"
+                )
             else:
-                methodBody.append("success &= WriteToBuffer(" + paramName + ", buffer, offset, size, fixedBuffer);")
+                methodBody.append(
+                    f"success &= WriteToBuffer({paramName}, buffer, offset, size, fixedBuffer);"
+                )
 
-        methodBody.append("if (!success)")
-        methodBody.append("{")
-        methodBody.append("    if (!fixedBuffer) delete[] buffer;")
-        methodBody.append("    return ERROR_WRITE_FAULT;")
-        methodBody.append("}")
-        methodBody.append("do_tracepoint(" + providerName + ", " + eventName + ", offset, buffer);")
-        methodBody.append("if (!fixedBuffer) delete[] buffer;")
-
+        methodBody.extend(
+            (
+                "if (!success)",
+                "{",
+                "    if (!fixedBuffer) delete[] buffer;",
+                "    return ERROR_WRITE_FAULT;",
+                "}",
+                f"do_tracepoint({providerName}, {eventName}, offset, buffer);",
+                "if (!fixedBuffer) delete[] buffer;",
+            )
+        )
     return "\n    ".join(methodBody) + "\n"
 
 def generateMethodSignature(template):
     if not template:
         return ""
-    
+
     functionSignature = template.signature
     lineFunctionPrototype = []
     for paramName in functionSignature.paramList:
@@ -510,34 +549,46 @@ def generateMethodSignature(template):
         mappedCount = palDataTypeMapping[winCount]
 
         if paramName in template.structCounts:
-            lineFunctionPrototype.append("    int " + paramName + "_ElementSize")
+            lineFunctionPrototype.append(f"    int {paramName}_ElementSize")
         # lineFunctionPrototype.append("//    " + wintypeName + " " + str(functionParameter.length))
         lineFunctionPrototype.append(
-            "    " + mappedType
-            + (mappedCount if mappedCount != " " else "*" if functionParameter.length and not wintypeName in ["win:UnicodeString", "win:AnsiString"] else "")
-            + " "
-            + functionParameter.name)
+            (
+                (
+                    (
+                        f"    {mappedType}"
+                        + (
+                            mappedCount
+                            if mappedCount != " "
+                            else "*"
+                            if functionParameter.length
+                            and wintypeName
+                            not in ["win:UnicodeString", "win:AnsiString"]
+                            else ""
+                        )
+                    )
+                    + " "
+                )
+                + functionParameter.name
+            )
+        )
     return ",\n".join(lineFunctionPrototype)
 
 
 def generateLttngTracepointProvider(providerName, lttngHeader, templates, events):
-    providerLines = [];
-
-    providerLines.append("#define TRACEPOINT_DEFINE")
-    providerLines.append("#ifndef CHAKRA_STATIC_LIBRARY")
-    providerLines.append("#define TRACEPOINT_PROBE_DYNAMIC_LINKAGE")
-    providerLines.append("#endif")
-    providerLines.append("#include \"stdlib.h\"")
-    providerLines.append("#include \"Common.h\"")
-    providerLines.append("#include \"Codex/Utf8Helper.h\"")
-    
-    providerLines.append("#include \"" + lttngHeader + "\"\n\n")
-    providerLines.append("#ifndef tracepoint_enabled")
-    providerLines.append("#define tracepoint_enabled(provider, name) 1")
-    providerLines.append("#define do_tracepoint tracepoint")
-    providerLines.append("#endif")
-
-    providerLines.append("""
+    providerLines = [
+        "#define TRACEPOINT_DEFINE",
+        "#ifndef CHAKRA_STATIC_LIBRARY",
+        "#define TRACEPOINT_PROBE_DYNAMIC_LINKAGE",
+        "#endif",
+        '#include \"stdlib.h\"',
+        '#include \"Common.h\"',
+        '#include \"Codex/Utf8Helper.h\"',
+        "#include \"" + lttngHeader + "\"\n\n",
+        "#ifndef tracepoint_enabled",
+        "#define tracepoint_enabled(provider, name) 1",
+        "#define do_tracepoint tracepoint",
+        "#endif",
+        """
 bool ResizeBuffer(char *&buffer, int&size, int currentLength, int newSize, bool &fixedBuffer)
 {
     newSize *= 1.5;
@@ -596,45 +647,43 @@ bool WriteToBuffer(const T &value, char *&buffer, int&offset, int&size, bool &fi
     offset += sizeof(T);
     return true;
 }
-""")
+""",
+    ];
 
     for eventNode in events:
         eventName    = eventNode.getAttribute('symbol')
         templateName = eventNode.getAttribute('template')
 
-        providerLines.append("extern \"C\" bool EventXplatEnabled%s(){ return tracepoint_enabled(%s, %s);}"
-                             % (eventName, providerName, eventName))
-        providerLines.append("")
-
+        providerLines.extend(
+            (
+                "extern \"C\" bool EventXplatEnabled%s(){ return tracepoint_enabled(%s, %s);}"
+                % (eventName, providerName, eventName),
+                "",
+            )
+        )
         template = None
         if templateName:
             template = templates[templateName]
 
         providerLines.append("extern \"C\" unsigned long FireEtXplat" + eventName + "(")
-        providerLines.append(generateMethodSignature(template))
-        providerLines.append(")")
-        providerLines.append("{")
-        providerLines.append("    if (!EventXplatEnabled" + eventName + "())")
-        providerLines.append("        return ERROR_SUCCESS;")
-
+        providerLines.extend((generateMethodSignature(template), ")", "{"))
+        providerLines.extend(
+            (
+                f"    if (!EventXplatEnabled{eventName}())",
+                "        return ERROR_SUCCESS;",
+            )
+        )
         if template:
             providerLines.append(generateMethodBody(template, providerName, eventName))
         else:
-            providerLines.append("    do_tracepoint(" + providerName + ", " + eventName +");")
+            providerLines.append(f"    do_tracepoint({providerName}, {eventName});")
 
-        providerLines.append("")
-        providerLines.append("    return ERROR_SUCCESS;")
-        providerLines.append("}")
-        providerLines.append("")
-
+        providerLines.extend(("", "    return ERROR_SUCCESS;", "}", ""))
     return "\n".join(providerLines)
 
 def generateEtwHeader(templates, events):
-    headerLines = []
+    headerLines = ['#include \"pal.h\"', ""]
 
-    headerLines.append("#include \"pal.h\"")
-    headerLines.append("")
-    
     for event in events:
         eventName = event.getAttribute('symbol')
         templateName = event.getAttribute('template')
@@ -648,37 +697,44 @@ def generateEtwHeader(templates, events):
             functionSignature = template.signature
             for param in functionSignature.paramList:
                 if param in template.structCounts:
-                    callArgs.append(param + "_ElementSize")
+                    callArgs.append(f"{param}_ElementSize")
                 callArgs.append(param)
 
-        headerLines.append("extern \"C\" bool EventXplatEnabled" + eventName +"();")
-        headerLines.append("inline bool EventEnabled" + eventName +"() { return EventXplatEnabled" + eventName + "();}")
-        headerLines.append("")
-        headerLines.append("extern \"C\" unsigned long FireEtXplat" + eventName +" (")
-        headerLines.append(generateMethodSignature(template))
-        headerLines.append(");")
-        headerLines.append("inline unsigned long EventWrite" + eventName + "(")
-        headerLines.append(generateMethodSignature(template))
-        headerLines.append(")")
-        headerLines.append("{")
-        headerLines.append("    return FireEtXplat" + eventName + "(" + ", ".join(callArgs) + ");")
-        headerLines.append("}")
-        headerLines.append("")
-        
-
+        headerLines.extend(
+            (
+                "extern \"C\" bool EventXplatEnabled" + eventName + "();",
+                f"inline bool EventEnabled{eventName}"
+                + "() { return EventXplatEnabled"
+                + eventName
+                + "();}",
+                "",
+                "extern \"C\" unsigned long FireEtXplat" + eventName + " (",
+                generateMethodSignature(template),
+                ");",
+                f"inline unsigned long EventWrite{eventName}(",
+                generateMethodSignature(template),
+                ")",
+                "{",
+                f"    return FireEtXplat{eventName}("
+                + ", ".join(callArgs)
+                + ");",
+                "}",
+                "",
+            )
+        )
     return "\n".join(headerLines)
 
 def generateCmakeFile(providerName):
-    cmakeLines = []
-    cmakeLines.append("project(Chakra.LTTng)")
-    cmakeLines.append("")
-    cmakeLines.append("add_compile_options(-fPIC)")
-    cmakeLines.append("")
-    cmakeLines.append("add_library (Chakra.LTTng OBJECT")
-    cmakeLines.append("  eventprovider" + providerName + ".cpp")
-    cmakeLines.append("  tracepointprovider" + providerName + ".cpp")
-    cmakeLines.append(")")
-
+    cmakeLines = [
+        "project(Chakra.LTTng)",
+        "",
+        "add_compile_options(-fPIC)",
+        "",
+        "add_library (Chakra.LTTng OBJECT",
+        f"  eventprovider{providerName}.cpp",
+        f"  tracepointprovider{providerName}.cpp",
+        ")",
+    ]
     return "\n".join(cmakeLines)
 
 def generateLttngFiles(manifest, providerDirectory):
