@@ -31,8 +31,8 @@ def get_sources(icuroot, mkin_path):
 
     def get_source(object_path):
         base = os.path.splitext(object_path)[0]
-        cpp = base + ".cpp"
-        c = base + ".c"
+        cpp = f"{base}.cpp"
+        c = f"{base}.c"
 
         # return None if we find a source but explicitly exclude it, compared
         # to raising an exception if a source is referenced that doesn't exist,
@@ -45,7 +45,7 @@ def get_sources(icuroot, mkin_path):
         elif os.path.isfile(c):
             return c
 
-        raise Exception("%s has no corresponding source file" % object_path)
+        raise Exception(f"{object_path} has no corresponding source file")
 
     with open(mkin_path, "r") as mkin_contents:
         in_objs = False
@@ -74,7 +74,7 @@ def get_sources(icuroot, mkin_path):
                 sources.extend(cpps)
 
         # should have returned by now
-        raise Exception("Could not extract sources from %s" % mkin_path)
+        raise Exception(f"Could not extract sources from {mkin_path}")
 
 def get_headers(icuroot, headers_path):
     # ignore these files, similar to Node
@@ -85,7 +85,7 @@ def get_headers(icuroot, headers_path):
     ignore = [os.path.join(icuroot, os.path.normpath(source)) for source in ignore]
 
     if not os.path.isdir(headers_path):
-        raise Exception("%s is not a valid headers path" % headers_path)
+        raise Exception(f"{headers_path} is not a valid headers path")
 
     headers = map(lambda h: os.path.join(headers_path, h), os.listdir(headers_path))
     headers = filter(lambda h: os.path.splitext(h)[1] == ".h", headers) # only include .h files
@@ -154,12 +154,13 @@ def download_icu(icuroot, version, yes):
 
     archive_url = "https://github.com/unicode-org/icu/releases/download/release-{0}/{1}".format(version.replace(".", "-"), archive_file)
     hash_url = "https://github.com/unicode-org/icu/releases/download/release-{0}/{1}".format(version.replace(".", "-"), hash_file)
-    #print(archive_file)
-    #print(hash_file)
-    #print(archive_url)
-    #print(hash_url)
+    if not yes:
+        #print(archive_file)
+        #print(hash_file)
+        #print(archive_url)
+        #print(hash_url)
 
-    license_confirmation = """
+        license_confirmation = """
 {1}
 This script downloads ICU from {0}.
 It is licensed to you by its publisher, not Microsoft.
@@ -168,17 +169,16 @@ Your installation and use of ICU is subject to the publisher's terms,
 which are available here: http://www.unicode.org/copyright.html#License
 {1}
 """.format(archive_url, "-" * 80)
-    if not yes:
         print(license_confirmation)
         response = raw_input("Do you agree to these terms? [Y/n] ")
-        if response != "" and response != "y" and response != "Y":
+        if response not in ["", "y", "Y"]:
             sys.exit(0)
 
-    print("Downloading ICU from %s" % archive_url)
+    print(f"Downloading ICU from {archive_url}")
 
     archive_path = urllib.urlretrieve(archive_url)[0]
 
-    print("Downloaded ICU to %s" % archive_path)
+    print(f"Downloaded ICU to {archive_path}")
 
     # check the hash of the download zipfile/tarball
     checksum = ""
@@ -196,15 +196,14 @@ which are available here: http://www.unicode.org/copyright.html#License
 
     correct_hash = relevant_hash[0]
     correct_hash = correct_hash.split(" ")[0]
-    if (correct_hash == checksum):
-        print("Hash checksums match, continuing")
-        return archive_path
-    else:
+    if correct_hash != checksum:
         raise Exception("Hash checksums do not match. Expected {0}, got {1}".format(correct_hash, checksum))
+    print("Hash checksums match, continuing")
+    return archive_path
 
 def extract_icu(icuroot, archive_path):
     tempdir = os.path.normpath(os.path.join(icuroot, "temp"))
-    print("Extracting ICU to %s" % tempdir)
+    print(f"Extracting ICU to {tempdir}")
     opener = ZipFile if os.name == "nt" else tarfile.open
     with opener(archive_path, "r") as archive:
         archive.extractall(tempdir)
@@ -213,7 +212,7 @@ def extract_icu(icuroot, archive_path):
     if os.path.isdir(icu_folder):
         shutil.rmtree(icu_folder)
 
-    print("Extraction successful, ICU will be located at %s" % icu_folder)
+    print(f"Extraction successful, ICU will be located at {icu_folder}")
     shutil.move(os.path.join(tempdir, "icu"), icu_folder)
     shutil.rmtree(tempdir)
 

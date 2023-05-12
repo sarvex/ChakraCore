@@ -69,10 +69,9 @@ if jit == False:
 elif noJit == False:
     print('Regenerating bytecode for jit build only')
 
-if x86 == True:
-    if overide_binary == "":
-        print('x86 build can only be used when pre-built and provided with the --binary command line parameter')
-        sys.exit(1)
+if x86 == True and overide_binary == "":
+    print('x86 build can only be used when pre-built and provided with the --binary command line parameter')
+    sys.exit(1)
 
 # Adjust path for running from different locations
 base_path = os.path.abspath(os.path.dirname(__file__))
@@ -87,26 +86,58 @@ def run_sub(message, commands, error):
         sys.exit(1)
 
 if skip_build == False:
-    # build for linux or macOS with build.sh script - could update to use cmake directly but this works for now
     if windows == False:
         if noJit == True:
-            run_sub('Compiling ChakraCore with no Jit',
-                [base_path + '/../build.sh', '--no-jit', '--debug', '--static', '--target-path=' + base_path + '/../out/noJit', '-j=8'], 
-                'No Jit build failed - aborting bytecode generation')
+            run_sub(
+                'Compiling ChakraCore with no Jit',
+                [
+                    f'{base_path}/../build.sh',
+                    '--no-jit',
+                    '--debug',
+                    '--static',
+                    f'--target-path={base_path}/../out/noJit',
+                    '-j=8',
+                ],
+                'No Jit build failed - aborting bytecode generation',
+            )
         if jit == True:
-            run_sub('Compiling ChakraCore with Jit',
-                [base_path + '/../build.sh', '--debug', '--static', '--target-path=' + base_path + '/../out/Jit', '-j=8'], 
-                'Jit build failed - aborting bytecode generation')
-    # build for windows
+            run_sub(
+                'Compiling ChakraCore with Jit',
+                [
+                    f'{base_path}/../build.sh',
+                    '--debug',
+                    '--static',
+                    f'--target-path={base_path}/../out/Jit',
+                    '-j=8',
+                ],
+                'Jit build failed - aborting bytecode generation',
+            )
     else:
         if noJit == True:
-            run_sub('Compiling ChakraCore with no Jit',
-                ['msbuild', '/P:platform=x64', '/P:configuration=debug', '/M', '/p:BuildJIT=false', base_path+ '/../Build/Chakra.Core.sln'],
-                'No Jit build failed - aborting bytecode generation')
+            run_sub(
+                'Compiling ChakraCore with no Jit',
+                [
+                    'msbuild',
+                    '/P:platform=x64',
+                    '/P:configuration=debug',
+                    '/M',
+                    '/p:BuildJIT=false',
+                    f'{base_path}/../Build/Chakra.Core.sln',
+                ],
+                'No Jit build failed - aborting bytecode generation',
+            )
         if jit == True:
-            run_sub('Compiling ChakraCore with Jit',
-                ['msbuild', '/P:platform=x64', '/P:configuration=debug', '/M', base_path + '/../Build/Chakra.Core.sln'],
-                'No Jit build failed - aborting bytecode generation')
+            run_sub(
+                'Compiling ChakraCore with Jit',
+                [
+                    'msbuild',
+                    '/P:platform=x64',
+                    '/P:configuration=debug',
+                    '/M',
+                    f'{base_path}/../Build/Chakra.Core.sln',
+                ],
+                'No Jit build failed - aborting bytecode generation',
+            )
 
 
 # Generate the new bytecode checking for changes to each file
@@ -130,7 +161,10 @@ header_text = '''//-------------------------------------------------------------
 def append_bytecode(header, command, in_path, file_name, error):
     command_with_file = command[:]
     command_with_file.append(in_path + file_name)
-    header.write('//Bytecode generated from ' + file_name + '\nconst char Library_Bytecode_')
+    header.write(
+        f'//Bytecode generated from {file_name}'
+        + '\nconst char Library_Bytecode_'
+    )
     header.write(file_name[:-3])
     header.flush()
     job = subprocess.Popen(command_with_file, stdout=header)
@@ -142,20 +176,19 @@ def append_bytecode(header, command, in_path, file_name, error):
 # Load file and ensure line endings are '\n' if on windows
 def load_file(path, mode):
     global windows
-    if windows == True:
-        if sys.version_info[0] < 3:
-            return open(path, mode + 'b')
-        else:
-            return open(path, mode, newline='\n')
-    else:
+    if windows != True:
         return open(path, mode)
+    if sys.version_info[0] < 3:
+        return open(path, f'{mode}b')
+    else:
+        return open(path, mode, newline='\n')
 
 # Regenerate the bytecode
 def bytecode_job(out_path, command, in_path, error):
     if verification_mode == True:
-        print('Checking bytecode in file ' + out_path)
+        print(f'Checking bytecode in file {out_path}')
     else:
-        print('Generating bytecode in file ' + out_path)
+        print(f'Generating bytecode in file {out_path}')
 
     old_version = ''
     global changes_detected
@@ -168,12 +201,11 @@ def bytecode_job(out_path, command, in_path, error):
     files.sort()
     filtered_files = []
     for file_name in files:
-        if file_name.endswith('.js'):
-            if file_name != 'Intl.js':
-                without_extension = file_name[:-3]
-                parts = without_extension.split('_')
-                header.write(' \\\nVALUE(' + parts[0] + ', ' + parts[1] + ', ' +  parts[0] + parts[1].title() + ')')
-                filtered_files.append(file_name)
+        if file_name.endswith('.js') and file_name != 'Intl.js':
+            without_extension = file_name[:-3]
+            parts = without_extension.split('_')
+            header.write(' \\\nVALUE(' + parts[0] + ', ' + parts[1] + ', ' +  parts[0] + parts[1].title() + ')')
+            filtered_files.append(file_name)
 
     header.write('\n\nnamespace js\n{\n\n#ifdef ENABLE_JS_BUILTINS\n\n')
 
@@ -201,7 +233,7 @@ def bytecode_job(out_path, command, in_path, error):
                 max_lines = min(len(new_lines), len(old_lines))
                 for i in range(0, max_lines):
                     if new_lines[i] != old_lines[i]:
-                        print('Error found - output on line ' + str(i + 1) + ' is:')
+                        print(f'Error found - output on line {str(i + 1)} is:')
                         print(new_lines[i].replace('\r', '\\r'))
                         print('Expected output was:')
                         print(old_lines[i].replace('\r', '\\r'))
@@ -210,8 +242,8 @@ def bytecode_job(out_path, command, in_path, error):
 
 # set paths for binaries - default paths based on build seteps above (different for windows to macOS and linux)
 # OR overridden path provided on command line
-noJitpath = base_path + "/../out/noJit/debug/ch"
-jitPath = base_path + "/../out/jit/debug/ch"
+noJitpath = f"{base_path}/../out/noJit/debug/ch"
+jitPath = f"{base_path}/../out/jit/debug/ch"
 
 if overide_binary != "":
     noJitpath = overide_binary
@@ -220,33 +252,45 @@ if overide_binary != "":
         print("Cannot use override binary option without specifying either jit or noJit")
         sys.exit(1)
 elif windows == True:
-    noJitpath = base_path + '/../Build/VcBuild.NoJIT/bin/x64_debug/ch.exe'
-    jitPath = base_path + '/../Build/VcBuild/bin/x64_debug/ch.exe'
+    noJitpath = f'{base_path}/../Build/VcBuild.NoJIT/bin/x64_debug/ch.exe'
+    jitPath = f'{base_path}/../Build/VcBuild/bin/x64_debug/ch.exe'
 
 # Call the functions above to generate the bytecode
 if noJit == True:
     commands = [noJitpath, '-GenerateLibraryByteCodeHeader']
     if x86 == False:
-        bytecode_job(base_path + '/../lib/Runtime/Library/InJavascript/JsBuiltIn.nojit.bc.64b.h',
-            commands, base_path + '/../lib/Runtime/Library/InJavascript/',
-            'Failed to generate noJit 64bit Bytecode')
+        bytecode_job(
+            f'{base_path}/../lib/Runtime/Library/InJavascript/JsBuiltIn.nojit.bc.64b.h',
+            commands,
+            f'{base_path}/../lib/Runtime/Library/InJavascript/',
+            'Failed to generate noJit 64bit Bytecode',
+        )
         commands.append('-Force32BitByteCode')
 
-    bytecode_job(base_path + '/../lib/Runtime/Library/InJavascript/JsBuiltIn.nojit.bc.32b.h',
-        commands, base_path + '/../lib/Runtime/Library/InJavascript/',
-        'Failed to generate noJit 32bit JsBuiltin Bytecode')
+    bytecode_job(
+        f'{base_path}/../lib/Runtime/Library/InJavascript/JsBuiltIn.nojit.bc.32b.h',
+        commands,
+        f'{base_path}/../lib/Runtime/Library/InJavascript/',
+        'Failed to generate noJit 32bit JsBuiltin Bytecode',
+    )
 
 if jit == True:
     commands = [jitPath, '-GenerateLibraryByteCodeHeader']
     if x86 == False:
-        bytecode_job(base_path + '/../lib/Runtime/Library/InJavascript/JsBuiltIn.bc.64b.h',
-            commands, base_path + '/../lib/Runtime/Library/InJavascript/',
-            'Failed to generate 64bit JsBuiltin Bytecode')
+        bytecode_job(
+            f'{base_path}/../lib/Runtime/Library/InJavascript/JsBuiltIn.bc.64b.h',
+            commands,
+            f'{base_path}/../lib/Runtime/Library/InJavascript/',
+            'Failed to generate 64bit JsBuiltin Bytecode',
+        )
         commands.append('-Force32BitByteCode')
 
-    bytecode_job(base_path + '/../lib/Runtime/Library/InJavascript/JsBuiltIn.bc.32b.h',
-        commands, base_path + '/../lib/Runtime/Library/InJavascript/',
-        'Failed to generate 32bit JsBuiltin Bytecode')
+    bytecode_job(
+        f'{base_path}/../lib/Runtime/Library/InJavascript/JsBuiltIn.bc.32b.h',
+        commands,
+        f'{base_path}/../lib/Runtime/Library/InJavascript/',
+        'Failed to generate 32bit JsBuiltin Bytecode',
+    )
 
 
 # Bytecode regeneration complete - assess changes, report result AND if appropriate generate a new GUID
@@ -258,7 +302,10 @@ if changes_detected == True:
         print("Bytecode updated for one variant only - ensure you re-run for both variants before submitting code")
     else:
         print('Generating new GUID for new bytecode')
-        guid_header = load_file(base_path + '/../lib/Runtime/Bytecode/ByteCodeCacheReleaseFileVersion.h', 'w')
+        guid_header = load_file(
+            f'{base_path}/../lib/Runtime/Bytecode/ByteCodeCacheReleaseFileVersion.h',
+            'w',
+        )
         guid = str(uuid.uuid4())
 
         output_str = '''//-------------------------------------------------------------------------------------------------------
@@ -280,8 +327,7 @@ const GUID byteCodeCacheReleaseFileVersion =
         guid_header.write(output_str)
 
         print('Bytecode successfully regenerated. Please rebuild ChakraCore to incorporate it.')
+elif verification_mode == True:
+    print('Bytecode is up to date\n')
 else:
-    if verification_mode == True:
-        print('Bytecode is up to date\n')
-    else:
-        print('Bytecode update was not required')
+    print('Bytecode update was not required')
